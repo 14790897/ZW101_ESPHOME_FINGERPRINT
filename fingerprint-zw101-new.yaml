@@ -81,15 +81,31 @@ binary_sensor:
     id: fp_match
     on_press:
       then:
-        - logger.log: "指纹匹配成功!"
-        # 完全禁用LED反馈 - 如需要可以取消下面的注释
-        # - lambda: |-
-        #     id(zw101_reader).set_rgb_led(3, 2, 200);
-        # - delay: 3s
-        # - lambda: |-
-        #     id(zw101_reader).set_rgb_led(4, 0, 0);
-        # 这里可以添加触发动作,例如开锁
-        # - switch.turn_on: door_lock
+        - logger.log: "指纹匹配成功! 开始控制舵机开锁"
+
+        # 可选: LED反馈 - 绿色常亮表示成功
+        - lambda: |-
+            id(zw101_reader).set_rgb_led(3, 2, 200);  // 绿色常亮
+
+        # 控制舵机开锁: 旋转到开锁位置
+        - servo.write:
+            id: door_servo
+            level: 100%  # 旋转到最大角度 (开锁位置)
+
+        - logger.log: "舵机已旋转到开锁位置"
+        - delay: 2s  # 保持开锁状态2秒
+
+        # 舵机返回初始位置 (关锁)
+        - servo.write:
+            id: door_servo
+            level: 0%  # 返回初始位置 (关锁位置)
+
+        - logger.log: "舵机已返回关锁位置"
+
+        # 可选: 关闭LED
+        - delay: 1s
+        - lambda: |-
+            id(zw101_reader).set_rgb_led(4, 0, 0);  // 关闭LED
 
 # 传感器 - 匹配得分和ID
 sensor:

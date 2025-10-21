@@ -13,7 +13,7 @@ void ZW101Component::setup() {
   search_last_action_ = millis();
 
   // 延迟读取模组信息,在 loop 中第一次运行时读取
-  // read_fp_info();  // 暂时注释,避免启动阻塞
+  read_fp_info();  // 暂时注释,避免启动阻塞
 }
 
 void ZW101Component::loop() {
@@ -25,12 +25,6 @@ void ZW101Component::loop() {
     led_off_sent = true;
     set_rgb_led(4, 0, 0);
     ESP_LOGI(TAG, "LED turned off");
-  }
-
-  // 启动后1秒读取模组信息(只读一次)
-  if (!info_read_ && now > 1000) {
-    info_read_ = true;
-    read_fp_info();
   }
 
   // 检查自动模式超时
@@ -132,26 +126,42 @@ void ZW101Component::process_search() {
       }
 
       if (length >= 12 && response[9] == 0x00) {
-        // 搜索成功
+        // 搜索命令执行成功,检查是否真的找到匹配
         uint16_t match_page = (response[10] << 8) | response[11];
         uint16_t match_score = (response[12] << 8) | response[13];
 
-        ESP_LOGI(TAG, "Match found! Page: %d, Score: %d", match_page, match_score);
-        ESP_LOGI(TAG, "Raw bytes - [10]=0x%02X [11]=0x%02X [12]=0x%02X [13]=0x%02X", 
-                 response[10], response[11], response[12], response[13]);
+        ESP_LOGI(TAG, "Search response - Page: %d (0x%04X), Score: %d", match_page, match_page, match_score);
 
-        if (fingerprint_sensor_)
-          fingerprint_sensor_->publish_state(true);
-        if (match_id_sensor_)
-          match_id_sensor_->publish_state(match_page);  // Page号就是显示的ID
-        if (match_score_sensor_)
-          match_score_sensor_->publish_state(match_score);
+        // 判断是否真的找到匹配:
+        // - 0xFFFF 表示未找到匹配
+        // - 有效的页码应该在 0 到 library_capacity_ 范围内
+        if (match_page != 0xFFFF && match_page < library_capacity_) {
+          // 真正的匹配成功
+          ESP_LOGI(TAG, "Match found! Page: %d, Score: %d", match_page, match_score);
+
+          if (fingerprint_sensor_)
+            fingerprint_sensor_->publish_state(true);
+          if (match_id_sensor_)
+            match_id_sensor_->publish_state(match_page);  // Page号就是显示的ID
+          if (match_score_sensor_)
+            match_score_sensor_->publish_state(match_score);
+          if (status_sensor_)
+            status_sensor_->publish_state("Match Found");
+
+          // 设置匹配标志,3秒后自动清除
+          match_found_ = true;
+          match_clear_time_ = now + 3000;
+        } else {
+          // 未匹配
+          ESP_LOGD(TAG, "No match found (Page=0x%04X)", match_page);
+          if (status_sensor_)
+            status_sensor_->publish_state("No Match");
+        }
+      } else if (length >= 12 && response[9] == 0x09) {
+        // 0x09 = PS_NOT_SEARCHED: 没有搜索到匹配
+        ESP_LOGD(TAG, "Search returned: No match (0x09)");
         if (status_sensor_)
-          status_sensor_->publish_state("Match Found");
-
-        // 设置匹配标志,3秒后自动清除
-        match_found_ = true;
-        match_clear_time_ = now + 3000;
+          status_sensor_->publish_state("No Match");
       }
 
       // 搜索完成,返回空闲状态
