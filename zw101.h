@@ -89,7 +89,7 @@ class ZW101Component : public Component, public uart::UARTDevice {
   uint8_t enroll_sample_count_{0};
   uint32_t enroll_last_action_{0};
   uint16_t next_fingerprint_id_{0};  // 下一个可用ID (从0开始)
-  uint16_t library_capacity_{200};
+  uint16_t library_capacity_{50};
 
   // 搜索流程状态
   enum SearchState {
