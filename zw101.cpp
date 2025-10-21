@@ -450,14 +450,14 @@ void ZW101Component::set_rgb_led(uint8_t mode, uint8_t color, uint8_t brightness
   uint16_t length = 9;
 
   // RGB 控制参数
-  uint8_t func_code = mode;      // 功能码: 1=呼吸 2=闪烁 3=常亮 4=关闭
-  uint8_t start_color = color;   // 颜色: 1=蓝 2=绿 4=红 7=白等
-  uint8_t duty = brightness;     // 亮度占空比
+  uint8_t func_code = mode;      // 功能码: 1=呼吸 2=闪烁 3=常亮 4=关闭 5=渐变开 6=渐变关 7=跑马灯
+  uint8_t start_color = color;   // 颜色: 1=蓝 2=绿 3=青 4=红 5=紫 6=黄 7=白
+  uint8_t duty = brightness;     // 亮度占空比: 0-255
   uint8_t loop_times = 0;        // 循环次数(0=无限)
   uint8_t cycle = 15;            // 周期(单位:100ms)
 
   uint16_t checksum = 1 + length + CMD_RGB_CTRL +
-                      func_code + start_color + duty + loop_times + cycle;
+                      func_code + start_color + duty + loop_times + cycle + 0x00;
 
   build_packet_header(packet, length);
   packet[9] = CMD_RGB_CTRL;
