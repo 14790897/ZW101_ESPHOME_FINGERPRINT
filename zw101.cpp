@@ -125,12 +125,20 @@ void ZW101Component::process_search() {
       uint8_t response[50];
       uint8_t length = wait_for_response(response, 50, 500);
 
+      // 调试: 打印完整响应包
+      if (length > 0) {
+        ESP_LOGI(TAG, "Search response length: %d", length);
+        ESP_LOG_BUFFER_HEX(TAG, response, length);
+      }
+
       if (length >= 12 && response[9] == 0x00) {
         // 搜索成功
         uint16_t match_page = (response[10] << 8) | response[11];
         uint16_t match_score = (response[12] << 8) | response[13];
 
         ESP_LOGI(TAG, "Match found! Page: %d, Score: %d", match_page, match_score);
+        ESP_LOGI(TAG, "Raw bytes - [10]=0x%02X [11]=0x%02X [12]=0x%02X [13]=0x%02X", 
+                 response[10], response[11], response[12], response[13]);
 
         if (fingerprint_sensor_)
           fingerprint_sensor_->publish_state(true);
@@ -164,7 +172,7 @@ void ZW101Component::process_enrollment() {
       // 等待手指放置
       if (now - enroll_last_action_ > 200) {  // 每200ms检查一次
         enroll_last_action_ = now;
-        send_cmd(CMD_GET_IMAGE);
+        send_cmd(CMD_GET_IMAGE_ENROLL);  // 使用注册模式采图命令 0x29
 
         if (receive_response()) {
           // 检测到手指,开始生成特征
@@ -446,31 +454,32 @@ bool ZW101Component::delete_fingerprint(uint16_t id) {
 
 // RGB LED 控制
 void ZW101Component::set_rgb_led(uint8_t mode, uint8_t color, uint8_t brightness) {
-  uint8_t packet[18];
-  uint16_t length = 9;
+  uint8_t packet[18];  // 总共18字节: 头(9) + 命令参数(6) + 校验和(2)
+  uint16_t length = 8;  // 包长度字段: 8字节 (命令码到保留字节,不含校验和)
 
-  // RGB 控制参数
+  // RGB 控制参数 (与原始C代码一致)
   uint8_t func_code = mode;      // 功能码: 1=呼吸 2=闪烁 3=常亮 4=关闭 5=渐变开 6=渐变关 7=跑马灯
-  uint8_t start_color = color;   // 颜色: 1=蓝 2=绿 3=青 4=红 5=紫 6=黄 7=白
-  uint8_t duty = brightness;     // 亮度占空比: 0-255
+  uint8_t start_color = color;   // 起始颜色: 1=蓝 2=绿 3=青 4=红 5=紫 6=黄 7=白
+  uint8_t end_color_duty = brightness;  // 结束颜色/占空比: 0-255
   uint8_t loop_times = 0;        // 循环次数(0=无限)
-  uint8_t cycle = 15;            // 周期(单位:100ms)
+  uint8_t cycle = 0x0f;          // 周期 (0x0f = 15, 单位:100ms)
 
+  // 计算校验和: 从包标识开始到保留字节
   uint16_t checksum = 1 + length + CMD_RGB_CTRL +
-                      func_code + start_color + duty + loop_times + cycle + 0x00;
+                      func_code + start_color + end_color_duty + loop_times + cycle + 0x00;
 
   build_packet_header(packet, length);
   packet[9] = CMD_RGB_CTRL;
   packet[10] = func_code;
   packet[11] = start_color;
-  packet[12] = duty;
+  packet[12] = end_color_duty;
   packet[13] = loop_times;
   packet[14] = cycle;
   packet[15] = 0x00;  // 保留字节
   packet[16] = (checksum >> 8) & 0xFF;
   packet[17] = checksum & 0xFF;
 
-  write_array(packet, 18);
+  write_array(packet, 18);  // 发送18字节
   flush();
 
   ESP_LOGI(TAG, "RGB LED set - Mode: %d, Color: %d, Brightness: %d", mode, color, brightness);
@@ -487,11 +496,19 @@ bool ZW101Component::enter_sleep_mode() {
   packet[10] = (checksum >> 8) & 0xFF;
   packet[11] = checksum & 0xFF;
 
+  ESP_LOGI(TAG, "Sending sleep command...");
+  ESP_LOG_BUFFER_HEX(TAG, packet, 12);
+
   write_array(packet, 12);
   flush();
 
   uint8_t response[32];
   uint8_t resp_len = wait_for_response(response, 32, 400);
+
+  ESP_LOGI(TAG, "Sleep response length: %d", resp_len);
+  if (resp_len > 0) {
+    ESP_LOG_BUFFER_HEX(TAG, response, resp_len);
+  }
 
   if (resp_len >= 12 && response[9] == 0x00) {
     sleep_mode_ = true;
@@ -502,7 +519,11 @@ bool ZW101Component::enter_sleep_mode() {
     return true;
   }
 
-  ESP_LOGW(TAG, "Failed to enter sleep mode");
+  if (resp_len > 0 && resp_len >= 10) {
+    ESP_LOGW(TAG, "Failed to enter sleep mode - Error code: 0x%02X", response[9]);
+  } else {
+    ESP_LOGW(TAG, "Failed to enter sleep mode - No response or timeout");
+  }
   return false;
 }
 
@@ -667,8 +688,6 @@ void ZW101Component::send_store_cmd(uint8_t buffer_id, uint16_t template_id) {
 void ZW101Component::send_search_cmd(uint8_t buffer_id, uint16_t start_page, uint16_t page_num) {
   uint8_t packet[17];
   uint16_t length = 8;
-  uint16_t checksum = 1 + length + CMD_SEARCH + buffer_id + (start_page >> 8) + (start_page & 0xFF) +
-                      (page_num >> 8) + (page_num & 0xFF);
 
   build_packet_header(packet, length);
   packet[9] = CMD_SEARCH;
@@ -677,8 +696,19 @@ void ZW101Component::send_search_cmd(uint8_t buffer_id, uint16_t start_page, uin
   packet[12] = start_page & 0xFF;
   packet[13] = (page_num >> 8) & 0xFF;
   packet[14] = page_num & 0xFF;
+  
+  // 计算校验和: 从packet[6]开始到packet[14] (不含校验和本身)
+  uint16_t checksum = 0;
+  for (int i = 6; i < 15; i++) {
+    checksum += packet[i];
+  }
+  
   packet[15] = (checksum >> 8) & 0xFF;
   packet[16] = checksum & 0xFF;
+
+  // 调试: 打印发送的搜索命令
+  ESP_LOGI(TAG, "Search CMD - buffer_id:%d, start:%d, num:%d", buffer_id, start_page, page_num);
+  ESP_LOG_BUFFER_HEX(TAG, packet, 17);
 
   write_array(packet, 17);
   flush();

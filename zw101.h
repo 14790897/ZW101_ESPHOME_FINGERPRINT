@@ -22,7 +22,8 @@ class ZW101Component : public Component, public uart::UARTDevice {
   static const uint32_t DEVICE_ADDRESS = 0xFFFFFFFF;
 
   // 定义指令码
-  static const uint8_t CMD_GET_IMAGE = 0x01;     // 获取图像
+  static const uint8_t CMD_GET_IMAGE = 0x01;     // 获取图像(匹配模式)
+  static const uint8_t CMD_GET_IMAGE_ENROLL = 0x29; // 获取图像(注册模式)
   static const uint8_t CMD_GEN_CHAR = 0x02;      // 生成特征
   static const uint8_t CMD_MATCH = 0x03;         // 精确比对指纹
   static const uint8_t CMD_SEARCH = 0x04;        // 搜索指纹
@@ -64,6 +65,16 @@ class ZW101Component : public Component, public uart::UARTDevice {
   bool auto_enroll_mode(uint16_t timeout_sec = 60); // 自动注册模式
   bool auto_match_mode();                  // 自动匹配模式
   void cancel_auto_mode();                 // 取消自动模式
+
+  // 控制自动搜索（简化方案 - 不依赖休眠命令）
+  void disable_auto_search() {
+    sleep_mode_ = true;
+    ESP_LOGI("zw101", "Auto search disabled (LED mode)");
+  }
+  void enable_auto_search() {
+    sleep_mode_ = false;
+    ESP_LOGI("zw101", "Auto search enabled");
+  }
 
  protected:
   // Sensors

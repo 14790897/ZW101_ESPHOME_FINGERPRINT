@@ -1,6 +1,6 @@
 substitutions:
   device_name: fingerprint-zw101
-  friendly_name: "ZW101 Fingerprint"
+  friendly_name: "ZW"
   # 指纹模组串口引脚配置
   fingerprint_rx_pin: GPIO0  # 连接到 ZW101 TX
   fingerprint_tx_pin: GPIO1  # 连接到 ZW101 RX
@@ -231,13 +231,14 @@ button:
           ESP_LOGI("main", "Starting auto enroll mode, timeout: %d seconds", timeout);
           id(zw101_reader).auto_enroll_mode(timeout);
 
-  # 自动匹配
+  # 自动匹配 - 最佳方案
   - platform: template
-    name: "${friendly_name} Auto Match"
+    name: "${friendly_name} Perfect LED + Match"
     id: auto_match_button
     on_press:
       - lambda: |-
-          ESP_LOGI("main", "Starting auto match mode");
+          id(zw101_reader).set_rgb_led(3, 4, 150);
+          delay(100);
           id(zw101_reader).auto_match_mode();
 
   # 取消自动模式
