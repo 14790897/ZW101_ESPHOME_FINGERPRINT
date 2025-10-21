@@ -36,6 +36,22 @@ logger:
   level: DEBUG
   baud_rate: 115200
 
+# PWM output configuration
+output:
+  - platform: ledc
+    id: door_servo_pwm
+    pin: GPIO2            
+    frequency: 100Hz
+
+# Door servo control configuration
+servo:
+  - id: door_servo
+    output: door_servo_pwm
+    auto_detach_time: 2s    # Auto disconnect after 2s to ensure door operation completion
+    min_level: 0%       
+    max_level: 25%      
+
+
 # 引用本地 External Component
 external_components:
   - source:
